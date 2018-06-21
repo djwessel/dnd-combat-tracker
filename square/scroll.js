@@ -128,20 +128,27 @@ Camera.prototype.move = function (delta, dirx, diry) {
 Game.load = function () {
    return [
       Loader.loadImage('tiles', '../assets/tiles.png'),
-      Loader.loadImage('hero', '../assets/character.png')
+      Loader.loadImage('hero', '../assets/character.png'),
+      Loader.loadImage('orc', '../assets/orc.png')
    ];
 };
 Game.init = function () {
    var that = this;
+   // Keyboard listeners
    Keyboard.listenForEvents(
       [Keyboard.LEFT, Keyboard.RIGHT, Keyboard.UP, Keyboard.DOWN]);
+   // Mouse listeners
    this.ctx.canvas.addEventListener('click', function(e) {
+      if (!that.moveMode)
+         return;
       var x = e.pageX - this.offsetLeft,
           y = e.pageY - this.offsetTop;
       var square = that.getSquareFromCanvas(x, y);
-      that.hero.move(square.col, square.row);
+      that.getCurrentActor().move(square.col, square.row);
    }, false);
    this.ctx.canvas.addEventListener('mousemove', function(e) {
+      if (!that.moveMode)
+         return;
       var x = e.pageX - this.offsetLeft,
           y = e.pageY - this.offsetTop;
       var square = that.getSquareFromCanvas(x, y);
@@ -151,15 +158,27 @@ Game.init = function () {
    this.ctx.canvas.addEventListener('mouseout', function() {
       that.mouseX = null;
       that.mouseY = null;
-   })
-   document.getElementById('nextTurnBtn').addEventListener('click', function() {
+   });
+   // Button listeners
+   $('#nextTurnBtn').on('click', function() {
       that.nextTurn();
-   }, false);
+   });
+   $('#startMoveBtn').on('click', function() {
+      that.toggleMove(true);
+   });
+   $('#endMoveBtn').on('click', function() {
+      that.toggleMove(false);
+   });
    
    this.tileAtlas = Loader.getImage('tiles');
    this.camera = new Camera(map, 512, 512);
-   this.hero = new Hero(map, 2, 1);
+   this.actors = [new Actor(map, 2, 1, 'hero'), new Actor(map, 3, 3, 'orc')];
+   this.actorIdx = 0;
+   this.toggleMove(false);
 };
+Game.getCurrentActor = function() {
+   return this.actors[this.actorIdx]
+}
 Game.getSquareFromCanvas = function(x, y) {
    var startCol = Math.floor(this.camera.x / map.tsize);
    var endCol = startCol + (this.camera.width / map.tsize);
@@ -173,8 +192,15 @@ Game.getSquareFromCanvas = function(x, y) {
    return {row: r, col: c}
 };
 Game.nextTurn = function() {
-   this.hero.nextTurn();
+   this.actorIdx = (this.actorIdx + 1) % this.actors.length;
+   this.getCurrentActor().nextTurn();
+   this.toggleMove(false);
 };
+Game.toggleMove = function(val) {
+   this.moveMode = val;
+   $('#startMoveBtn').toggle(!val);
+   $('#endMoveBtn').toggle(val);
+}
 Game.update = function (delta) {
    // handle camera movement with arrow keys
    var dirx = 0;
@@ -236,7 +262,7 @@ Game._drawGrid = function() {
       }
    }
 };
-Game._drawHero = function() {
+Game._drawActors = function() {
    var startCol = Math.floor(this.camera.x / map.tsize);
    var endCol = startCol + (this.camera.width / map.tsize);
    var startRow = Math.floor(this.camera.y / map.tsize);
@@ -244,15 +270,17 @@ Game._drawHero = function() {
    var offsetX = -this.camera.x + startCol * map.tsize;
    var offsetY = -this.camera.y + startRow * map.tsize;
    
-   this.ctx.drawImage(
-      this.hero.image,
-      Math.round((this.hero.x - startCol) * map.tsize + offsetX),
-      Math.round((this.hero.y - startRow) * map.tsize + offsetY),
-      map.tsize,
-      map.tsize);
+   for (var i = 0; i < this.actors.length; i++) {
+      this.ctx.drawImage(
+         this.actors[i].image,
+         Math.round((this.actors[i].x - startCol) * map.tsize + offsetX),
+         Math.round((this.actors[i].y - startRow) * map.tsize + offsetY),
+         map.tsize,
+         map.tsize);
+   }
    
 };
-Game._drawCurrentHero = function() {
+Game._drawCurrentActor = function() {
    var startCol = Math.floor(this.camera.x / map.tsize);
    var endCol = startCol + (this.camera.width / map.tsize);
    var startRow = Math.floor(this.camera.y / map.tsize);
@@ -261,12 +289,14 @@ Game._drawCurrentHero = function() {
    var offsetY = -this.camera.y + startRow * map.tsize;
    
    this.ctx.strokeStyle = 'yellow';
-   this.ctx.strokeRect(Math.round((this.hero.x - startCol) * map.tsize + offsetX),
-      Math.round((this.hero.y - startRow) * map.tsize + offsetY),
+   this.ctx.strokeRect(Math.round((this.getCurrentActor().x - startCol) * map.tsize + offsetX),
+      Math.round((this.getCurrentActor().y - startRow) * map.tsize + offsetY),
       map.tsize,
       map.tsize);
 }
 Game._drawMovementSquares = function() {
+   if (!this.moveMode)
+      return;
    var startCol = Math.floor(this.camera.x / map.tsize);
    var endCol = startCol + (this.camera.width / map.tsize);
    var startRow = Math.floor(this.camera.y / map.tsize);
@@ -278,7 +308,7 @@ Game._drawMovementSquares = function() {
    var oldAlpha = this.ctx.globalAlpha;
    this.ctx.globalAlpha = 0.5;
    this.ctx.fillStyle = 'blue'
-   this.hero.getMovementSquares().forEach(function(square) {
+   this.getCurrentActor().getMovementSquares().forEach(function(square) {
       col = square[0];
       row = square[1];
       
@@ -293,12 +323,14 @@ Game._drawMovementSquares = function() {
    this.ctx.globalAlpha = oldAlpha;
 };
 Game._drawMove = function() {
+   if (!this.moveMode)
+      return;
    var x = this.mouseX;
    var y = this.mouseY;
    if (x == null || y == null)
       return;
    
-   var move = this.hero.getMove(x, y);
+   var move = this.getCurrentActor().getMove(x, y);
    if (!move)
       return;
    
@@ -328,17 +360,17 @@ Game.render = function () {
    this._drawLayer(1);
    // draw grid
    this._drawGrid();
-   // draw hero
-   this._drawHero();
+   // draw actors
+   this._drawActors();
    // draw possible movement
    this._drawMovementSquares();
-   // draw current hero
-   this._drawCurrentHero();
+   // draw current actors
+   this._drawCurrentActor();
    // draw move
    this._drawMove();
 };
 
-function Hero(map, x, y) {
+function Actor(map, x, y, image) {
    this.map = map;
    this.x = x;
    this.y = y;
@@ -348,12 +380,12 @@ function Hero(map, x, y) {
    this.currentSpeedLeft = this.speed;
    this.currentDiagCount = 0;
    
-   this.image = Loader.getImage('hero');
+   this.image = Loader.getImage(image);
 }
-Hero.prototype.getMove = function(x, y) {
+Actor.prototype.getMove = function(x, y) {
    return this.map.getMove(this.x, this.y, x, y, this.currentSpeedLeft, this.currentDiagCount % 2 == 1);
 };
-Hero.prototype.move = function(x, y) {
+Actor.prototype.move = function(x, y) {
    var move = this.getMove(x, y)
    if (move && move.dist <= this.currentSpeedLeft) {
       this.x = x;
@@ -362,11 +394,11 @@ Hero.prototype.move = function(x, y) {
       this.currentDiagCount += move.diags;
    }
 };
-Hero.prototype.getMovementSquares = function() {
+Actor.prototype.getMovementSquares = function() {
    var moves = this.map.getMovesInDistance(this.x, this.y, this.currentSpeedLeft, this.currentDiagCount % 2 == 1);
    return Object.values(moves).map(function(val) { return val.addr; });
 };
-Hero.prototype.nextTurn = function() {
+Actor.prototype.nextTurn = function() {
    this.currentSpeedLeft = this.speed;
    this.currentDiagCount = 0;
 };
